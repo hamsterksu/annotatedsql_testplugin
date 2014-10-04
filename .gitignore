@@ -11,3 +11,7 @@ build/*
 /android-annotatedsql-processor/*.iml
 /gradlew.bat
 /gradlew
+
+/test-plugin-api/*.iml
+
+/test-plugin-processor/*.iml
