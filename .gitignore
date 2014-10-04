@@ -1,0 +1,13 @@
+build/
+build/*
+
+.gradle
+.gradle/*
+/.idea
+/gradle
+/*.iml
+
+/android-annotatedsql-api/*.iml
+/android-annotatedsql-processor/*.iml
+/gradlew.bat
+/gradlew

@@ -1,0 +1,2 @@
+include ':test-plugin-api'
+include ':test-plugin-processor'

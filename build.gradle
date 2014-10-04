@@ -1,0 +1,25 @@
+subprojects {
+
+    sourceCompatibility = 1.7
+    group = 'com.hamsterksu.testplugin'
+    version = '1.0.9'
+
+    apply plugin: 'java'
+	apply plugin: 'maven'
+
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+
+    sourceSets {
+        main {
+            java {
+                srcDir 'src'
+            }
+            resources {
+                srcDir 'res'
+            }
+        }
+    }
+}
