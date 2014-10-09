@@ -1,5 +1,7 @@
 package com.hamsterksu.testplugin;
 
+import com.annotatedsql.annotation.sql.Column;
+import com.annotatedsql.ftl.ColumnMeta;
 import com.annotatedsql.ftl.SchemaMeta;
 import com.annotatedsql.ftl.TableColumns;
 import com.annotatedsql.ftl.ViewMeta;
@@ -12,7 +14,9 @@ import com.hamsterksu.testplugin.annotation.CursorWrapper;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,6 +43,7 @@ public class CursorWrapperPlugin implements com.annotatedsql.processor.sql.ISche
     private ProcessingEnvironment processingEnv;
     private Configuration cfg = new Configuration();
     private List<CursorWrapperMeta> wrappers = new ArrayList<CursorWrapperMeta>();
+    private LinkedHashMap<String, Map<String, String>> javaTypesForTables = new LinkedHashMap<String, Map<String, String>>();
 
     @Override
     public void init(ProcessingEnvironment processingEnv, ProcessorLogger logger) {
@@ -54,23 +59,25 @@ public class CursorWrapperPlugin implements com.annotatedsql.processor.sql.ISche
         this.logger.i("[CursorWrapper] processTable");
         this.logger.i("[CursorWrapper] e.name = " + element.getSimpleName());
         CursorWrapper wrapper = element.getAnnotation(CursorWrapper.class);
-        if(wrapper == null){
+        if (wrapper == null) {
             this.logger.i("[CursorWrapper] can't find @CursorWrapper. ignore table " + tableInfo.getTableName());
             return;
         }
         TableColumns tableColumns = tableInfo.getTableColumns();
+
         Map<String, String> javaTypes = findColumnsTypes(element);
-        for(String c : tableColumns){
-            if(!javaTypes.containsKey(c)){
-                //use String by default
-                javaTypes.put(c, "String");
+        for (String c : tableColumns) {
+            if (!javaTypes.containsKey(c)) {
+                logger.i("add types : column " + c + "=> type " + getDefaultJavaType(tableColumns.getSqlType(c), tableColumns.isColumnNotNull(c)));
+                javaTypes.put(c, getDefaultJavaType(tableColumns.getSqlType(c), tableColumns.isColumnNotNull(c)));
             }
         }
-        CursorWrapperMeta lCursorWrapperMeta = new CursorWrapperMeta(null,
-                element,
+        javaTypesForTables.put(tableInfo.getTableName(), javaTypes);
+        logger.i("add types for table: " + tableInfo.getTableName() + ", columns : " + Arrays.toString(javaTypes.keySet().toArray()));
+        CursorWrapperMeta lCursorWrapperMeta = new CursorWrapperMeta(element,
                 tableColumns.toColumnsList(),
                 javaTypes,
-                tableColumns.getColumn2Variable());
+                tableColumns.getColumn2Variable(), false);
 
         wrappers.add(lCursorWrapperMeta);
         this.logger.i("[CursorWrapper] processTable end");
@@ -114,6 +121,29 @@ public class CursorWrapperPlugin implements com.annotatedsql.processor.sql.ISche
     @Override
     public void processView(Element element, ViewMeta meta) {
         this.logger.i("[CursorWrapper] processView");
+        CursorWrapper wrapper = element.getAnnotation(CursorWrapper.class);
+        if (wrapper != null) {
+            List<String> columnNameList = new ArrayList<String>();
+            Map<String, String> columnToVariable = new HashMap<String, String>();
+            Map<String, String> columnToType = new HashMap<String, String>();
+            for (ViewMeta.ViewTableInfo lViewTableInfo : meta.getTables()) {
+                for (ColumnMeta lColumnMeta : lViewTableInfo.getColumns()) {
+                    //get base column name to get type.
+                    final String[] fullName = lColumnMeta.fullName.split("\\.");
+                    final String baseColumnName = fullName[fullName.length - 1];
+
+                    columnNameList.add(lColumnMeta.alias);
+                    columnToVariable.put(lColumnMeta.alias, lColumnMeta.variableAlias);
+                    columnToType.put(lColumnMeta.alias, javaTypesForTables.get(lViewTableInfo.getTableName()).get(baseColumnName));
+                }
+            }
+            wrappers.add(new CursorWrapperMeta(element,
+                    columnNameList,
+                    columnToType,
+                    columnToVariable, true));
+        } else {
+            this.logger.i("[CursorWrapper] can't find @CursorWrapper. ignore view " + meta.getViewName());
+        }
         this.logger.i("[CursorWrapper] processView end");
     }
 
@@ -129,7 +159,11 @@ public class CursorWrapperPlugin implements com.annotatedsql.processor.sql.ISche
         processAbstractCursorWrapper(schema);
         for (CursorWrapperMeta wrapper : wrappers) {
             wrapper.setPkgName(schema.getPkgName());
-            processCursorWrapper(wrapper);
+            if (wrapper.isForView()) {
+                processCursorWrapperForView(wrapper);
+            } else {
+                processCursorWrapper(wrapper);
+            }
         }
         this.logger.i("[CursorWrapper] processSchema end");
     }
@@ -175,19 +209,41 @@ public class CursorWrapperPlugin implements com.annotatedsql.processor.sql.ISche
     }
 
     private void processCursorWrapperForView(CursorWrapperMeta tableMeta) {
+        this.logger.i("[CursorWrapperForView] processCursorWrapper");
         JavaFileObject file;
         try {
             file = processingEnv.getFiler().createSourceFile(tableMeta.getPkgName() + "." + tableMeta.getCursorWrapperName());
-            logger.i("Creating file:  " + tableMeta.getPkgName() + "." + tableMeta.getCursorWrapperName());
+            logger.i("[CursorWrapperForView] Creating file:  " + tableMeta.getPkgName() + "." + tableMeta.getCursorWrapperName());
             Writer out = file.openWriter();
             Template t = cfg.getTemplate("view_cursor_wrapper.ftl");
             t.process(tableMeta, out);
             out.flush();
             out.close();
         } catch (IOException e) {
-            logger.e("EntityProcessor IOException: ", e);
+            logger.e("[CursorWrapperForView] EntityProcessor IOException: ", e);
         } catch (TemplateException e) {
-            logger.e("EntityProcessor TemplateException: ", e);
+            logger.e("[CursorWrapperForView] EntityProcessor TemplateException: ", e);
+        }
+    }
+
+    private String getDefaultJavaType(Column.Type sqlType, boolean isNotNull) {
+        switch (sqlType) {
+            case BLOB:
+                return byte[].class.getSimpleName();
+            case INTEGER:
+                if (isNotNull) {
+                    return int.class.getSimpleName();
+                } else {
+                    return Integer.class.getSimpleName();
+                }
+            case REAL:
+                if (isNotNull) {
+                    return double.class.getSimpleName();
+                } else {
+                    return Double.class.getSimpleName();
+                }
+            default:
+                return String.class.getSimpleName();
         }
     }
 }

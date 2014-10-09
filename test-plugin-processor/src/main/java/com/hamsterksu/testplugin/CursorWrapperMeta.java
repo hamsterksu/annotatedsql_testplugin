@@ -1,12 +1,7 @@
 package com.hamsterksu.testplugin;
 
-import com.annotatedsql.ftl.ColumnMeta;
-import com.annotatedsql.ftl.ViewMeta;
-
 import org.apache.commons.lang.WordUtils;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,31 +23,15 @@ public class CursorWrapperMeta {
 
     private final List<String> columnNameList;
 
-    public CursorWrapperMeta(String packageName, Element tableClassName, List<ViewMeta.ViewTableInfo> viewTableInfo) {
-        pkgName = packageName;
-        this.tableClassName = tableClassName.getSimpleName().toString();
-        this.tableCanonicalName = ((TypeElement) tableClassName).getQualifiedName().toString();
-        columnNameList = new ArrayList<String>();
-        columnToVariable = new HashMap<String, String>();
-        columnToType = new HashMap<String, String>();
-        for (ViewMeta.ViewTableInfo lViewTableInfo : viewTableInfo) {
-            for (ColumnMeta lColumnMeta : lViewTableInfo.getColumns()) {
-                String columnName = lColumnMeta.alias;
-                columnNameList.add(columnName);
-                columnToVariable.put(columnName, lColumnMeta.getVariableAlias());
-                //columnToType.put(columnName, lColumnMeta.classType);
-            }
-        }
-    }
+    private final boolean isForView;
 
-
-    public CursorWrapperMeta(String packageName, Element tableClassName, List<String> columnNameList, Map<String, String> columnToType, Map<String, String> columnToVariable) {
-        pkgName = packageName;
+    public CursorWrapperMeta(Element tableClassName, List<String> columnNameList, Map<String, String> columnToType, Map<String, String> columnToVariable, boolean isForView) {
         this.columnNameList = columnNameList;
         this.columnToType = columnToType;
         this.tableClassName = tableClassName.getSimpleName().toString();
         this.tableCanonicalName = ((TypeElement) tableClassName).getQualifiedName().toString();
         this.columnToVariable = columnToVariable;
+        this.isForView = isForView;
     }
 
     public String getPkgName() {
@@ -89,5 +68,9 @@ public class CursorWrapperMeta {
 
     public void setPkgName(String pkgName) {
         this.pkgName = pkgName;
+    }
+
+    public boolean isForView() {
+        return isForView;
     }
 }
